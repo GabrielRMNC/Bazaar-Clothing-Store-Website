@@ -294,3 +294,32 @@ button.delete:hover {
     height: 350px; /* Slightly smaller on mobile */
   }
 }
+
+/* Add this to your existing App.css */
+.generate-random {
+  background-color: #6f42c1; /* Purple color */
+  color: white;
+  padding: 12px;
+  border-radius: 1px;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+  font-family: "Boldonse", system-ui;
+}
+
+.generate-random:hover {
+  background-color: #5a32a3;
+}
+
+/* Ensure the controls section can accommodate the new button */
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr; /* Keep 3 columns for filters */
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+/* Style the second controls div separately if needed */
+.container > .controls:nth-child(2) {
+  grid-template-columns: 1fr; /* Single column for the button */
+  justify-items: center; /* Center the button */
+}

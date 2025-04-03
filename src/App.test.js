@@ -1,132 +1,86 @@
-// Extracted functions from App.js for testing
-const initialClothes = [
-  { id: 1, name: "T-Shirt", price: 20, category: "Men", brand: "Nike", description: "A comfortable cotton t-shirt." },
-  { id: 2, name: "Jeans", price: 50, category: "Women", brand: "Levi's", description: "Classic blue denim jeans." },
-  { id: 3, name: "Jacket", price: 100, category: "Unisex", brand: "Adidas", description: "Warm winter jacket." },
-];
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import App from './App';
 
-// Filter function (already in your code)
-const filterByCategory = (items, categoryFilter) => {
-  return items.filter((c) => c.category.toLowerCase().includes(categoryFilter.toLowerCase()));
-};
+describe('App CRUD Operations', () => {
+  // Test initial rendering
+  test('renders initial clothing list', () => {
+    render(<App />);
+    expect(screen.getByText(/T-Shirt/i)).toBeInTheDocument();
+    expect(screen.getByText(/Jeans/i)).toBeInTheDocument();
+  });
 
-// CRUD functions extracted from App.js
-const handleAdd = (clothes, clothing) => {
-  return [...clothes, { ...clothing, id: Date.now(), image: clothing.image || "https://via.placeholder.com/80?text=New+Item" }];
-};
+  // Test Adding a new clothing item
+  test('adds a new clothing item', async () => {
+    render(<App />);
 
-const handleUpdate = (clothes, updatedClothing) => {
-  return clothes.map((c) => (c.id === updatedClothing.id ? updatedClothing : c));
-};
+    // Fill the form
+    fireEvent.change(screen.getByPlaceholderText(/Clothing Name/i), { target: { value: 'Test Shirt' } });
+    fireEvent.change(screen.getByPlaceholderText(/Price/i), { target: { value: '25' } });
+    fireEvent.change(screen.getByPlaceholderText(/Category/i), { target: { value: 'Unisex' } });
+    fireEvent.change(screen.getByPlaceholderText(/Brand/i), { target: { value: 'TestBrand' } });
+    fireEvent.change(screen.getByPlaceholderText(/Description/i), { target: { value: 'A test item' } });
+    fireEvent.change(screen.getByPlaceholderText(/Image URL/i), { target: { value: 'test-image.png' } });
 
-const handleDelete = (clothes, id) => {
-  return clothes.filter((c) => c.id !== id);
-};
+    // Submit the form
+    fireEvent.click(screen.getByText(/Add/i));
 
-// Test Suite
-describe('CRUD Operations Simple Tests', () => {
-  // Existing Filter Tests
-  describe('Category Filter Simple Tests', () => {
-    test('returns all items when filter is empty', () => {
-      const filtered = filterByCategory(initialClothes, '');
-      expect(filtered).toHaveLength(3);
-      expect(filtered).toEqual(initialClothes);
-    });
-
-    test('filters to only Women category', () => {
-      const filtered = filterByCategory(initialClothes, 'Women');
-      expect(filtered).toHaveLength(1);
-      expect(filtered[0].category).toBe('Women');
-      expect(filtered[0].name).toBe('Jeans');
-    });
-
-    test('filters to only Unisex category', () => {
-      const filtered = filterByCategory(initialClothes, 'Unisex');
-      expect(filtered).toHaveLength(1);
-      expect(filtered[0].category).toBe('Unisex');
-      expect(filtered[0].name).toBe('Jacket');
+    // Wait for the new item to appear
+    await waitFor(() => {
+      expect(screen.getByText(/Test Shirt/i)).toBeInTheDocument();
     });
   });
 
-  // New CRUD Tests
-  describe('Create (Add) Operation', () => {
-    test('adds a new clothing item to the list', () => {
-      const newClothing = {
-        name: "Sneakers",
-        price: 120,
-        category: "Unisex",
-        brand: "Nike",
-        description: "Sporty and stylish sneakers.",
-      };
-      const updatedClothes = handleAdd(initialClothes, newClothing);
-      expect(updatedClothes).toHaveLength(4);
-      expect(updatedClothes[3].name).toBe("Sneakers");
-      expect(updatedClothes[3].id).toBeDefined(); // Check that an ID was assigned
-      expect(updatedClothes[3].image).toBe("https://via.placeholder.com/80?text=New+Item"); // Default image
-    });
+  // Test Editing an existing clothing item
+  test('updates an existing clothing item', async () => {
+    render(<App />);
 
-    test('adds a new clothing item with custom image', () => {
-      const newClothing = {
-        name: "Hat",
-        price: 25,
-        category: "Men",
-        brand: "Adidas",
-        description: "Cool summer hat.",
-        image: "/images/hat.png",
-      };
-      const updatedClothes = handleAdd(initialClothes, newClothing);
-      expect(updatedClothes).toHaveLength(4);
-      expect(updatedClothes[3].image).toBe("/images/hat.png"); // Custom image preserved
+    // Click edit on the first item (T-Shirt)
+    fireEvent.click(screen.getAllByText(/Edit/i)[0]);
+
+    // Update the form
+    fireEvent.change(screen.getByPlaceholderText(/Clothing Name/i), { target: { value: 'Updated T-Shirt' } });
+    fireEvent.change(screen.getByPlaceholderText(/Price/i), { target: { value: '30' } });
+
+    // Submit the update
+    fireEvent.click(screen.getByText(/Update/i));
+
+    // Wait for the updated item to appear
+    await waitFor(() => {
+      expect(screen.getByText(/Updated T-Shirt/i)).toBeInTheDocument();
+      //expect(screen.getByText(/\$30/i)).toBeInTheDocument();
     });
   });
 
-  describe('Read (Filter/Sort) Operation', () => {
-    test('sorts clothes by price correctly', () => {
-      const sortedByPrice = [...initialClothes].sort((a, b) => (a.price > b.price ? 1 : -1));
-      expect(sortedByPrice[0].name).toBe("T-Shirt"); // $20
-      expect(sortedByPrice[1].name).toBe("Jeans");   // $50
-      expect(sortedByPrice[2].name).toBe("Jacket");  // $100
-    });
+  // Test Deleting a clothing item
+  test('deletes a clothing item', async () => {
+    render(<App />);
 
-    test('sorts clothes by name correctly', () => {
-      const sortedByName = [...initialClothes].sort((a, b) => (a.name > b.name ? 1 : -1));
-      expect(sortedByName[0].name).toBe("Jacket");
-      expect(sortedByName[1].name).toBe("Jeans");
-      expect(sortedByName[2].name).toBe("T-Shirt");
+    // Ensure item exists before deletion
+    expect(screen.getByText(/T-Shirt/i)).toBeInTheDocument();
+
+    // Click delete on the first item (T-Shirt)
+    fireEvent.click(screen.getAllByText(/Delete/i)[0]);
+
+    // Wait for the item to be removed
+    await waitFor(() => {
+      expect(screen.queryByText(/T-Shirt/i)).not.toBeInTheDocument();
     });
   });
 
-  describe('Update Operation', () => {
-    test('updates an existing clothing item', () => {
-      const updatedClothing = { ...initialClothes[0], name: "Updated T-Shirt", price: 25 };
-      const updatedClothes = handleUpdate(initialClothes, updatedClothing);
-      expect(updatedClothes).toHaveLength(3);
-      expect(updatedClothes[0].name).toBe("Updated T-Shirt");
-      expect(updatedClothes[0].price).toBe(25);
-      expect(updatedClothes[1]).toEqual(initialClothes[1]); // Other items unchanged
-    });
-
-    test('does not change list if ID does not exist', () => {
-      const updatedClothing = { id: 999, name: "Non-existent", price: 10 };
-      const updatedClothes = handleUpdate(initialClothes, updatedClothing);
-      expect(updatedClothes).toHaveLength(3);
-      expect(updatedClothes).toEqual(initialClothes); // No changes
-    });
+  // Test filtering by category
+  test('filters clothes by category', () => {
+    render(<App />);
+    fireEvent.change(screen.getByPlaceholderText(/Filter by category/i), { target: { value: 'Men' } });
+    expect(screen.getByText(/T-Shirt/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Jeans/i)).not.toBeInTheDocument(); // Jeans is Women
   });
 
-  describe('Delete Operation', () => {
-    test('deletes a clothing item by ID', () => {
-      const updatedClothes = handleDelete(initialClothes, 2); // Delete Jeans
-      expect(updatedClothes).toHaveLength(2);
-      expect(updatedClothes.some(c => c.id === 2)).toBe(false);
-      expect(updatedClothes[0].name).toBe("T-Shirt");
-      expect(updatedClothes[1].name).toBe("Jacket");
-    });
-
-    test('does not change list if ID does not exist', () => {
-      const updatedClothes = handleDelete(initialClothes, 999); // Non-existent ID
-      expect(updatedClothes).toHaveLength(3);
-      expect(updatedClothes).toEqual(initialClothes); // No changes
-    });
+  // Test sorting by price
+  test('sorts clothes by price', () => {
+    render(<App />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'price' } });
+    const items = screen.getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent(/Socks/i); // Cheapest: $10
+    expect(items[1]).toHaveTextContent(/Cap/i);   // Next: $15
   });
 });

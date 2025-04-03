@@ -2,9 +2,10 @@ import React, { useState, useEffect } from "react";
 import "./App.css";
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Pie } from 'react-chartjs-2';
+import { faker } from '@faker-js/faker'; // Import Faker
 
 // Register ChartJS components
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement)
 
 const initialClothes = [
     { id: 1, name: "T-Shirt", price: 20, category: "Men", brand: "Nike", description: "A comfortable cotton t-shirt.", image: "/images/M+NSW+TEE+CLUB+SSNL+HBR.png" },
@@ -34,6 +35,30 @@ function App() {
         categoryCount: { labels: [], datasets: [] },
         brandDistribution: { labels: [], datasets: [] }
     });
+
+    // Function to generate a random clothing item
+    const generateRandomClothing = () => {
+        const categories = ["Men", "Women", "Unisex"];
+        const brands = ["Nike", "Levi's", "Adidas", "North Face", "New Era", "Columbia", "Reebok", "Timberland"];
+        const clothingTypes = ["Shirt", "Pants", "Jacket", "Shoes", "Hat", "Socks", "Gloves", "Top", "Boots"];
+
+        return {
+            id: Date.now() + Math.random(), // Ensure unique ID
+            name: `${faker.word.adjective()} ${clothingTypes[Math.floor(Math.random() * clothingTypes.length)]}`,
+            price: faker.number.int({ min: 10, max: 200 }),
+            category: categories[Math.floor(Math.random() * categories.length)],
+            brand: brands[Math.floor(Math.random() * brands.length)],
+            description: faker.lorem.sentence(),
+            image: `https://via.placeholder.com/360?text=${encodeURIComponent(faker.commerce.productName())}`
+        };
+    };
+
+    // Function to add multiple random items
+    const handleGenerateRandom = () => {
+        const numberOfItems = faker.number.int({ min: 1, max: 3 }); // Generate 1-5 items
+        const newItems = Array.from({ length: numberOfItems }, generateRandomClothing);
+        setClothes(prevClothes => [...prevClothes, ...newItems]);
+    };
 
     const handleAdd = (clothing) => {
         const newClothes = [...clothes, { ...clothing, id: Date.now(), image: clothing.image || "https://via.placeholder.com/80?text=New+Item" }];
@@ -145,6 +170,13 @@ function App() {
                         <option value="name">Sort by Name</option>
                         <option value="price">Sort by Price</option>
                     </select>
+                </div>
+
+                {/* Add the Generate Random button here */}
+                <div className="controls">
+                    <button onClick={handleGenerateRandom} className="generate-random">
+                        Generate Item
+                    </button>
                 </div>
 
                 <ClothingList
