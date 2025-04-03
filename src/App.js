@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
+import { BrowserRouter as Router, Route, Routes, Link, useNavigate } from 'react-router-dom';
 import "./App.css";
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Pie } from 'react-chartjs-2';
-import { faker } from '@faker-js/faker'; // Import Faker
+import { faker } from '@faker-js/faker';
 
 // Register ChartJS components
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement)
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
 const initialClothes = [
     { id: 1, name: "T-Shirt", price: 20, category: "Men", brand: "Nike", description: "A comfortable cotton t-shirt.", image: "/images/M+NSW+TEE+CLUB+SSNL+HBR.png" },
@@ -19,6 +20,29 @@ const initialClothes = [
     { id: 16, name: "Tank Top", price: 20, category: "Men", brand: "Reebok", description: "Light and breathable tank top.", image: "/images/reebok-reebok-graphic-series-vector-tank-top_19727733_45209773_2048.png" },
     { id: 17, name: "Boots", price: 140, category: "Women", brand: "Timberland", description: "Durable and stylish boots.", image:"/images/fcf1ca07a865497594169256b08225b2.png" }
 ];
+
+function AboutUs() {
+    const navigate = useNavigate();
+
+    return (
+        <div className="container about-us">
+            <h1>About Bazaar</h1>
+            <p>Welcome to Bazaar, your one-stop shop for stylish and affordable clothing!</p>
+
+            <h2>Our Story</h2>
+            <p>2025 MPP Project - Romanica Gabriel</p>
+
+            <h2>Contact Us</h2>
+            <p>Email: romanicagabrielmail@gmail.com</p>
+            <p>Phone: 0741 051 301</p>
+            <p>Address: Cluj-Napoca</p>
+
+            <button onClick={() => navigate('/')} className="back-home">
+                Back to Home
+            </button>
+        </div>
+    );
+}
 
 function App() {
     const [clothes, setClothes] = useState(initialClothes);
@@ -150,81 +174,93 @@ function App() {
     const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
     return (
-        <div>
-            <div className="header">🛍 Bazaar</div>
-            <div className="container">
-                <div className="controls">
-                    <input
-                        type="text"
-                        placeholder="Filter by category..."
-                        value={categoryFilter}
-                        onChange={(e) => setCategoryFilter(e.target.value)}
-                    />
-                    <input
-                        type="text"
-                        placeholder="Filter by brand..."
-                        value={brandFilter}
-                        onChange={(e) => setBrandFilter(e.target.value)}
-                    />
-                    <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                        <option value="name">Sort by Name</option>
-                        <option value="price">Sort by Price</option>
-                    </select>
+        <Router>
+            <div>
+                <div className="header">
+                    <Link to="/" className="home-link">🛍 Bazaar</Link>
+                    <Link to="/about" className="about-button">About Us</Link>
                 </div>
 
-                {/* Add the Generate Random button here */}
-                <div className="controls">
-                    <button onClick={handleGenerateRandom} className="generate-random">
-                        Generate Item
-                    </button>
-                </div>
+                <Routes>
+                    <Route path="/" element={
+                        <div className="container">
+                            {/* ... (keep all your existing controls, ClothingList, etc.) */}
+                            <div className="controls">
+                                <input
+                                    type="text"
+                                    placeholder="Filter by category..."
+                                    value={categoryFilter}
+                                    onChange={(e) => setCategoryFilter(e.target.value)}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Filter by brand..."
+                                    value={brandFilter}
+                                    onChange={(e) => setBrandFilter(e.target.value)}
+                                />
+                                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                                    <option value="name">Sort by Name</option>
+                                    <option value="price">Sort by Price</option>
+                                </select>
+                            </div>
 
-                <ClothingList
-                    clothes={currentClothes}
-                    onEdit={setSelectedClothing}
-                    onDelete={handleDelete}
-                    stats={stats}
-                />
+                            <div className="controls">
+                                <button onClick={handleGenerateRandom} className="generate-random">
+                                    Generate Item
+                                </button>
+                            </div>
 
-                <div className="pagination">
-                    {Array.from({ length: totalPages }, (_, i) => (
-                        <button
-                            key={i + 1}
-                            onClick={() => paginate(i + 1)}
-                            className={currentPage === i + 1 ? 'active' : ''}
-                        >
-                            {i + 1}
-                        </button>
-                    ))}
-                </div>
+                            <ClothingList
+                                clothes={currentClothes}
+                                onEdit={setSelectedClothing}
+                                onDelete={handleDelete}
+                                stats={stats}
+                            />
 
-                <ClothingForm
-                    onAdd={handleAdd}
-                    onUpdate={handleUpdate}
-                    selectedClothing={selectedClothing}
-                />
+                            <div className="pagination">
+                                {Array.from({ length: totalPages }, (_, i) => (
+                                    <button
+                                        key={i + 1}
+                                        onClick={() => paginate(i + 1)}
+                                        className={currentPage === i + 1 ? 'active' : ''}
+                                    >
+                                        {i + 1}
+                                    </button>
+                                ))}
+                            </div>
 
-                {isLoading ? (
-                    <div>Loading charts...</div>
-                ) : (
-                    <div className="charts-container">
-                        <div className="chart">
-                            <h3>Price Distribution</h3>
-                            <Bar data={chartData.priceDistribution} options={{ maintainAspectRatio: false, responsive: true }} />
+                            <ClothingForm
+                                onAdd={handleAdd}
+                                onUpdate={handleUpdate}
+                                selectedClothing={selectedClothing}
+                            />
+
+                            {isLoading ? (
+                                <div>Loading charts...</div>
+                            ) : (
+                                <div className="charts-container">
+                                    <div className="chart">
+                                        <h3>Price Distribution</h3>
+                                        <Bar data={chartData.priceDistribution} options={{ maintainAspectRatio: false, responsive: true }} />
+                                    </div>
+                                    <div className="chart">
+                                        <h3>Items by Category</h3>
+                                        <Pie data={chartData.categoryCount} options={{ maintainAspectRatio: false, responsive: true }} />
+                                    </div>
+                                    <div className="chart">
+                                        <h3>Brand Distribution</h3>
+                                        <Bar data={chartData.brandDistribution} options={{ maintainAspectRatio: false, responsive: true }} />
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                        <div className="chart">
-                            <h3>Items by Category</h3>
-                            <Pie data={chartData.categoryCount} options={{ maintainAspectRatio: false, responsive: true }} />
-                        </div>
-                        <div className="chart">
-                            <h3>Brand Distribution</h3>
-                            <Bar data={chartData.brandDistribution} options={{ maintainAspectRatio: false, responsive: true }} />
-                        </div>
-                    </div>
-                )}
+                    } />
+                    <Route path="/about" element={<AboutUs />} />
+                </Routes>
+
+                <div className="footer">© 2025 Bazaar</div>
             </div>
-            <div className="footer">© 2025 Bazaar</div>
-        </div>
+        </Router>
     );
 }
 

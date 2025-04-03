@@ -17,9 +17,11 @@ body {
   background: linear-gradient(135deg, #101010 0%, #1b1919 100%);
   color: white;
   padding: 25px;
-  text-align: center;
-  font-size: 28px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  display: flex;
+  justify-content: space-between; /* Pushes About Us to left, allows centering of Bazaar */
+  align-items: center;
+  position: relative; /* For absolute positioning of home-link */
 }
 
 /* Main Container */
@@ -322,4 +324,70 @@ button.delete:hover {
 .container > .controls:nth-child(2) {
   grid-template-columns: 1fr; /* Single column for the button */
   justify-items: center; /* Center the button */
+}
+
+.home-link {
+  color: white;
+  text-decoration: none;
+  font-size: 28px;
+  transition: color 0.3s ease;
+  position: absolute; /* Center it absolutely */
+  left: 50%;
+  transform: translateX(-50%); /* Offset by half its width to truly center */
+}
+
+.home-link:hover {
+  color: #ddd;
+}
+
+.about-button {
+
+  color: #ffffff;
+  padding: 7px 10px;
+  border-radius: 3px;
+  text-decoration: none;
+  font-size: 16px;
+  transition: background-color 0.3s ease;
+}
+
+.about-button:hover {
+  background-color: #7e7878;
+}
+
+/* About Us Page Styling */
+.about-us {
+  padding: 40px;
+  text-align: center;
+}
+
+.about-us h1 {
+  font-size: 36px;
+  margin-bottom: 20px;
+}
+
+.about-us h2 {
+  font-size: 24px;
+  margin: 30px 0 10px;
+}
+
+.about-us p {
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.back-home {
+  background-color: #000000;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 5px;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  margin-top: 20px;
+}
+
+.back-home:hover {
+  background-color: #333;
 }
