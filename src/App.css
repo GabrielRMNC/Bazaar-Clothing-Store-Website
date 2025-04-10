@@ -391,3 +391,28 @@ button.delete:hover {
 .back-home:hover {
   background-color: #333;
 }
+
+/* Add to your existing App.css */
+.server-status {
+  margin-left: 20px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-weight: bold;
+}
+
+.server-status.up {
+  background-color: #28a745;
+  color: white;
+}
+
+.server-status.down {
+  background-color: #dc3545;
+  color: white;
+}
+
+.server-down-message {
+  text-align: center;
+  color: #dc3545;
+  font-weight: bold;
+  margin: 20px 0;
+}

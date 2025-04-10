@@ -1,9 +1,8 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const { body, validationResult, check } = require('express-validator');
+const { body, validationResult } = require('express-validator');
 
 const app = express();
 const server = http.createServer(app);
@@ -52,33 +51,45 @@ const validateClothing = [
     body('category').isString().notEmpty(),
     body('brand').isString().notEmpty(),
     body('description').isString().notEmpty(),
-
 ];
 
-// GET: All clothes with optional filter and sort
+// Ping endpoint for server status
+app.head('/api/ping', (req, res) => {
+    res.status(200).send();
+});
+
+// GET: All clothes with filtering, sorting, and pagination
 app.get('/api/clothes', (req, res) => {
     let result = [...clothes];
 
     if (req.query.category) {
         result = result.filter(c => c.category.toLowerCase().includes(req.query.category.toLowerCase()));
     }
-
     if (req.query.brand) {
         result = result.filter(c => c.brand.toLowerCase().includes(req.query.brand.toLowerCase()));
     }
-
     if (req.query.sort) {
         const sortKey = req.query.sort;
         result.sort((a, b) => {
             const valA = a[sortKey];
             const valB = b[sortKey];
-            return typeof valA === 'string'
-                ? valA.localeCompare(valB)
-                : valA - valB;
+            return typeof valA === 'string' ? valA.localeCompare(valB) : valA - valB;
         });
     }
 
-    res.json(result);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 8;
+    const startIndex = (page - 1) * limit;
+    const endIndex = page * limit;
+
+    const paginatedResult = result.slice(startIndex, endIndex);
+
+    res.json({
+        items: paginatedResult,
+        totalItems: result.length,
+        currentPage: page,
+        totalPages: Math.ceil(result.length / limit)
+    });
 });
 
 // POST: Add new clothing item
@@ -103,7 +114,7 @@ app.patch('/api/clothes/:id', (req, res) => {
     res.json(clothes[index]);
 });
 
-// PUT: Replace clothing item (with validation)
+// PUT: Replace clothing item
 app.put('/api/clothes/:id', validateClothing, (req, res) => {
     const id = Number(req.params.id);
     const index = clothes.findIndex(c => c.id === id);
@@ -136,7 +147,7 @@ io.on('connection', (socket) => {
     });
 });
 
-//  Start server only if not in test mode
+// Start server only if not in test mode
 if (process.env.NODE_ENV !== 'test') {
     const PORT = 3001;
     server.listen(PORT, () => {
@@ -144,5 +155,4 @@ if (process.env.NODE_ENV !== 'test') {
     });
 }
 
-//  Export app for unit testing
 module.exports = app;

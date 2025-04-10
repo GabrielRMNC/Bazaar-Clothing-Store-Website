@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { BrowserRouter as Router, Route, Routes, Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import "./App.css";
@@ -32,9 +32,11 @@ function App() {
     const [categoryFilter, setCategoryFilter] = useState("");
     const [brandFilter, setBrandFilter] = useState("");
     const [sortBy, setSortBy] = useState("name");
-    const [currentPage, setCurrentPage] = useState(1);
-    const [isLoading, setIsLoading] = useState(true);
-    const itemsPerPage = 8;
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
+    const [serverDown, setServerDown] = useState(false);
+    const observer = useRef();
 
     const [chartData, setChartData] = useState({
         priceDistribution: { labels: [], datasets: [] },
@@ -42,59 +44,117 @@ function App() {
         brandDistribution: { labels: [], datasets: [] }
     });
 
+    // Check server status periodically
     useEffect(() => {
-        const socket = io("http://localhost:3001");
-
-        socket.on("connect", () => {
-            console.log("Connected to server via socket:", socket.id);
-        });
-
-        socket.on("disconnect", () => {
-            console.log("Disconnected from server");
-        });
-
-        return () => {
-            socket.disconnect();
+        const checkServerStatus = async () => {
+            try {
+                await axios.head('http://localhost:3001/api/ping');
+                setServerDown(false);
+            } catch (err) {
+                setServerDown(true);
+            }
         };
+
+        checkServerStatus();
+        const interval = setInterval(checkServerStatus, 5000);
+        return () => clearInterval(interval);
     }, []);
 
+    // Socket.IO setup with deduplication
+    useEffect(() => {
+        const socket = io("http://localhost:3001");
+        socket.on("connect", () => {
+            console.log("Connected to server via socket:", socket.id);
+            setServerDown(false);
+        });
+        socket.on("disconnect", () => {
+            console.log("Disconnected from server");
+            setServerDown(true);
+        });
+        socket.on("clothingAdded", (item) => {
+            setClothes(prev => {
+                if (!prev.some(c => c.id === item.id)) {
+                    return [...prev, item];
+                }
+                return prev;
+            });
+        });
+        socket.on("clothingUpdated", (item) => {
+            setClothes(prev => prev.map(c => c.id === item.id ? item : c));
+        });
+        socket.on("clothingDeleted", (id) => {
+            setClothes(prev => prev.filter(c => c.id !== id));
+        });
+        return () => socket.disconnect();
+    }, []);
+
+    // Fetch clothes with infinite scroll and deduplication
     useEffect(() => {
         const fetchClothes = async () => {
+            if (!hasMore || serverDown) return;
+            setIsLoading(true);
             try {
-                const res = await axios.get('http://localhost:3001/api/clothes');
-                setClothes(res.data);
+                const res = await axios.get('http://localhost:3001/api/clothes', {
+                    params: { page, limit: 8, category: categoryFilter, brand: brandFilter, sort: sortBy }
+                });
+                setClothes(prev => {
+                    const newItems = res.data.items.filter(item => !prev.some(c => c.id === item.id));
+                    return [...prev, ...newItems];
+                });
+                setHasMore(res.data.currentPage < res.data.totalPages);
             } catch (err) {
-                console.error("Error loading clothes:", err);
+                console.error("Error fetching clothes:", err);
+                setServerDown(true);
+            } finally {
+                setIsLoading(false);
             }
         };
         fetchClothes();
-    }, []);
+    }, [page, categoryFilter, brandFilter, sortBy, serverDown]);
+
+    // Reset clothes when filters/sort change
+    useEffect(() => {
+        setClothes([]);
+        setPage(1);
+        setHasMore(true);
+    }, [categoryFilter, brandFilter, sortBy]);
 
     const handleAdd = async (clothing) => {
+        if (serverDown) return;
         try {
             const res = await axios.post('http://localhost:3001/api/clothes', clothing);
-            setClothes(prev => [...prev, res.data]);
+            setClothes(prev => {
+                if (!prev.some(c => c.id === res.data.id)) {
+                    return [...prev, res.data];
+                }
+                return prev;
+            });
         } catch (err) {
             console.error("Error adding clothing:", err);
+            setServerDown(true);
         }
     };
 
     const handleUpdate = async (updatedClothing) => {
+        if (serverDown) return;
         try {
             await axios.put(`http://localhost:3001/api/clothes/${updatedClothing.id}`, updatedClothing);
             setClothes(prev => prev.map(c => (c.id === updatedClothing.id ? updatedClothing : c)));
             setSelectedClothing(null);
         } catch (err) {
             console.error("Error updating clothing:", err);
+            setServerDown(true);
         }
     };
 
     const handleDelete = async (id) => {
+        if (serverDown) return;
         try {
             await axios.delete(`http://localhost:3001/api/clothes/${id}`);
             setClothes(prev => prev.filter(c => c.id !== id));
         } catch (err) {
             console.error("Error deleting clothing:", err);
+            setServerDown(true);
         }
     };
 
@@ -113,33 +173,38 @@ function App() {
     };
 
     const handleGenerateRandom = async () => {
+        if (serverDown) return;
         const numberOfItems = faker.number.int({ min: 1, max: 3 });
         for (let i = 0; i < numberOfItems; i++) {
             await handleAdd(generateRandomClothing());
         }
     };
 
-    const filteredSortedClothes = clothes
-        .filter(c => c.category.toLowerCase().includes(categoryFilter.toLowerCase()))
-        .filter(c => c.brand.toLowerCase().includes(brandFilter.toLowerCase()))
-        .sort((a, b) => (a[sortBy] > b[sortBy] ? 1 : -1));
-
-    const indexOfLastItem = currentPage * itemsPerPage;
-    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentClothes = filteredSortedClothes.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(filteredSortedClothes.length / itemsPerPage);
+    const lastClothingElementRef = useCallback(
+        (node) => {
+            if (isLoading || serverDown) return;
+            if (observer.current) observer.current.disconnect();
+            observer.current = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && hasMore) {
+                    setPage(prev => prev + 1);
+                }
+            });
+            if (node) observer.current.observe(node);
+        },
+        [isLoading, hasMore, serverDown]
+    );
 
     useEffect(() => {
         const updateCharts = async () => {
             try {
                 setIsLoading(true);
                 await new Promise(resolve => setTimeout(resolve, 100));
-                const prices = filteredSortedClothes.map(c => c.price);
-                const categories = filteredSortedClothes.reduce((acc, c) => {
+                const prices = clothes.map(c => c.price);
+                const categories = clothes.reduce((acc, c) => {
                     acc[c.category] = (acc[c.category] || 0) + 1;
                     return acc;
                 }, {});
-                const brands = filteredSortedClothes.reduce((acc, c) => {
+                const brands = clothes.reduce((acc, c) => {
                     acc[c.brand] = (acc[c.brand] || 0) + 1;
                     return acc;
                 }, {});
@@ -179,14 +244,12 @@ function App() {
             }
         };
         updateCharts();
-    }, [clothes, categoryFilter, brandFilter]);
+    }, [clothes]);
 
     const stats = {
-        maxPrice: filteredSortedClothes.length ? Math.max(...filteredSortedClothes.map(c => c.price)) : 0,
-        minPrice: filteredSortedClothes.length ? Math.min(...filteredSortedClothes.map(c => c.price)) : 0,
-        avgPrice: filteredSortedClothes.length
-            ? filteredSortedClothes.reduce((sum, c) => sum + c.price, 0) / filteredSortedClothes.length
-            : 0
+        maxPrice: clothes.length ? Math.max(...clothes.map(c => c.price)) : 0,
+        minPrice: clothes.length ? Math.min(...clothes.map(c => c.price)) : 0,
+        avgPrice: clothes.length ? clothes.reduce((sum, c) => sum + c.price, 0) / clothes.length : 0
     };
 
     return (
@@ -195,29 +258,41 @@ function App() {
                 <div className="header">
                     <Link to="/" className="home-link">🛍 Bazaar</Link>
                     <Link to="/about" className="about-button">About Us</Link>
+                    <span className={`server-status ${serverDown ? 'down' : 'up'}`}>
+                        Server: {serverDown ? 'Down' : 'Up'}
+                    </span>
                 </div>
                 <Routes>
                     <Route path="/" element={
                         <div className="container">
+                            {serverDown && (
+                                <div className="server-down-message">
+                                    The server is currently down. Please try again later.
+                                </div>
+                            )}
                             <div className="controls">
-                                <input type="text" placeholder="Filter by category..." value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} />
-                                <input type="text" placeholder="Filter by brand..." value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} />
-                                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                                <input type="text" placeholder="Filter by category..." value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} disabled={serverDown} />
+                                <input type="text" placeholder="Filter by brand..." value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} disabled={serverDown} />
+                                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} disabled={serverDown}>
                                     <option value="name">Sort by Name</option>
                                     <option value="price">Sort by Price</option>
                                 </select>
                             </div>
                             <div className="controls">
-                                <button onClick={handleGenerateRandom} className="generate-random">Generate Item</button>
+                                <button onClick={handleGenerateRandom} className="generate-random" disabled={serverDown}>Generate Item</button>
                             </div>
-                            <ClothingList clothes={currentClothes} onEdit={setSelectedClothing} onDelete={handleDelete} stats={stats} />
-                            <div className="pagination">
-                                {Array.from({ length: totalPages }, (_, i) => (
-                                    <button key={i + 1} onClick={() => setCurrentPage(i + 1)} className={currentPage === i + 1 ? 'active' : ''}>{i + 1}</button>
-                                ))}
-                            </div>
-                            <ClothingForm onAdd={handleAdd} onUpdate={handleUpdate} selectedClothing={selectedClothing} />
-                            {isLoading ? <div>Loading charts...</div> : (
+                            <ClothingList
+                                clothes={clothes}
+                                onEdit={setSelectedClothing}
+                                onDelete={handleDelete}
+                                stats={stats}
+                                lastClothingElementRef={lastClothingElementRef}
+                                serverDown={serverDown}
+                            />
+                            {isLoading && !serverDown && <div>Loading more items...</div>}
+                            {!hasMore && clothes.length > 0 && !serverDown && <div>No more items to load.</div>}
+                            <ClothingForm onAdd={handleAdd} onUpdate={handleUpdate} selectedClothing={selectedClothing} disabled={serverDown} />
+                            {isLoading && !serverDown ? <div>Loading charts...</div> : (
                                 <div className="charts-container">
                                     <div className="chart">
                                         <h3>Price Distribution</h3>
@@ -243,34 +318,41 @@ function App() {
     );
 }
 
-function ClothingList({ clothes, onEdit, onDelete, stats }) {
+function ClothingList({ clothes, onEdit, onDelete, stats, lastClothingElementRef, serverDown }) {
     return (
         <ul className="clothing-list">
-            {clothes.map(c => (
-                <li key={c.id} className="clothing-item">
-                    <img src={c.image} alt={c.name} />
-                    <div className="clothing-details">
-                        <span>
-                            {c.name} - <strong>${c.price}</strong> ({c.category})
-                            {c.price === stats.maxPrice && <span className="price-label most-expensive"> (Most Expensive)</span>}
-                            {c.price === stats.minPrice && <span className="price-label least-expensive"> (Least Expensive)</span>}
-                            {Math.abs(c.price - stats.avgPrice) < 10 && c.price !== stats.maxPrice && c.price !== stats.minPrice && (
-                                <span className="price-label average-priced"> (Near Average)</span>
-                            )}
-                        </span>
-                        <br /><small>Brand: {c.brand} | {c.description}</small>
-                    </div>
-                    <div className="buttons">
-                        <button className="edit" onClick={() => onEdit(c)}>✏️ Edit</button>
-                        <button className="delete" onClick={() => onDelete(c.id)}>🗑️ Delete</button>
-                    </div>
-                </li>
-            ))}
+            {clothes.map((c, index) => {
+                const isLastElement = clothes.length === index + 1;
+                return (
+                    <li
+                        key={c.id}
+                        className="clothing-item"
+                        ref={isLastElement ? lastClothingElementRef : null}
+                    >
+                        <img src={c.image} alt={c.name} />
+                        <div className="clothing-details">
+                            <span>
+                                {c.name} - <strong>${c.price}</strong> ({c.category})
+                                {c.price === stats.maxPrice && <span className="price-label most-expensive"> (Most Expensive)</span>}
+                                {c.price === stats.minPrice && <span className="price-label least-expensive"> (Least Expensive)</span>}
+                                {Math.abs(c.price - stats.avgPrice) < 10 && c.price !== stats.maxPrice && c.price !== stats.minPrice && (
+                                    <span className="price-label average-priced"> (Near Average)</span>
+                                )}
+                            </span>
+                            <br /><small>Brand: {c.brand} | {c.description}</small>
+                        </div>
+                        <div className="buttons">
+                            <button className="edit" onClick={() => onEdit(c)} disabled={serverDown}>✏️ Edit</button>
+                            <button className="delete" onClick={() => onDelete(c.id)} disabled={serverDown}>🗑️ Delete</button>
+                        </div>
+                    </li>
+                );
+            })}
         </ul>
     );
 }
 
-function ClothingForm({ onAdd, onUpdate, selectedClothing }) {
+function ClothingForm({ onAdd, onUpdate, selectedClothing, disabled }) {
     const [form, setForm] = useState({ name: "", price: "", category: "", brand: "", description: "", image: "" });
 
     useEffect(() => {
@@ -291,13 +373,13 @@ function ClothingForm({ onAdd, onUpdate, selectedClothing }) {
 
     return (
         <form className="clothing-form" onSubmit={handleSubmit}>
-            <input name="name" placeholder="Clothing Name" value={form.name} onChange={handleChange} required />
-            <input name="price" type="number" placeholder="Price ($)" value={form.price} onChange={handleChange} required />
-            <input name="category" placeholder="Category" value={form.category} onChange={handleChange} required />
-            <input name="brand" placeholder="Brand" value={form.brand} onChange={handleChange} required />
-            <input name="description" placeholder="Description" value={form.description} onChange={handleChange} required />
-            <input name="image" placeholder="Image URL" value={form.image} onChange={handleChange} />
-            <button className="submit" type="submit">{form.id ? "Update" : "Add"}</button>
+            <input name="name" placeholder="Clothing Name" value={form.name} onChange={handleChange} required disabled={disabled} />
+            <input name="price" type="number" placeholder="Price ($)" value={form.price} onChange={handleChange} required disabled={disabled} />
+            <input name="category" placeholder="Category" value={form.category} onChange={handleChange} required disabled={disabled} />
+            <input name="brand" placeholder="Brand" value={form.brand} onChange={handleChange} required disabled={disabled} />
+            <input name="description" placeholder="Description" value={form.description} onChange={handleChange} required disabled={disabled} />
+            <input name="image" placeholder="Image URL" value={form.image} onChange={handleChange} disabled={disabled} />
+            <button className="submit" type="submit" disabled={disabled}>{form.id ? "Update" : "Add"}</button>
         </form>
     );
 }
