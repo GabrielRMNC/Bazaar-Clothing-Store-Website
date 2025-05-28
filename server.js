@@ -4,7 +4,7 @@ const cors = require('cors');
 const sequelize = require('./config/database');
 const { Category, Brand, ClothingItem } = require('./models/associations');
 const clothingRoutes = require('./routes/clothingRoutes');
-
+require('dotenv').config();
 const app = express();
 
 // Middleware
