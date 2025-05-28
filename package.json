@@ -21,12 +21,13 @@
     "react-router-dom": "^7.4.1",
     "react-scripts": "5.0.1",
     "sequelize": "^6.37.7",
+    "serve": "^14.2.4",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "react-scripts start",
+    "start": "serve -s build",
     "build": "react-scripts build",
     "test": "jest",
     "test:coverage": "jest --coverage",
