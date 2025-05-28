@@ -1,14 +1,18 @@
-//server.js
+// server.js
 const express = require('express');
 const cors = require('cors');
 const sequelize = require('./config/database');
 const { Category, Brand, ClothingItem } = require('./models/associations');
 const clothingRoutes = require('./routes/clothingRoutes');
 require('dotenv').config();
+
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: process.env.FRONTEND_URL || '*', // Set to frontend domain on Railway
+    credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
