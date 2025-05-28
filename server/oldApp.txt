@@ -1,11 +1,11 @@
-// src/App.js
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { BrowserRouter as Router, Route, Routes, Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import "./App.css";
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Pie } from 'react-chartjs-2';
 import { faker } from '@faker-js/faker';
-import { clothingApi } from './services/api';
+import { io } from "socket.io-client";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
@@ -32,13 +32,11 @@ function App() {
     const [categoryFilter, setCategoryFilter] = useState("");
     const [brandFilter, setBrandFilter] = useState("");
     const [sortBy, setSortBy] = useState("name");
-    const [currentPage, setCurrentPage] = useState(1);
+    const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [serverDown, setServerDown] = useState(false);
     const observer = useRef();
-
-
 
     const [chartData, setChartData] = useState({
         priceDistribution: { labels: [], datasets: [] },
@@ -50,62 +48,89 @@ function App() {
     useEffect(() => {
         const checkServerStatus = async () => {
             try {
-                const response = await clothingApi.getAllClothes(1, 1);
+                await axios.head('http://localhost:3001/api/ping');
                 setServerDown(false);
             } catch (err) {
                 setServerDown(true);
             }
         };
+        // Initial server status check
         checkServerStatus();
         const interval = setInterval(checkServerStatus, 5000);
         return () => clearInterval(interval);
     }, []);
 
-    // Fetch clothes with infinite scroll
-    const fetchClothes = async () => {
-        if (!hasMore || isLoading || serverDown) return;
-        try {
-            setIsLoading(true);
-            const data = await clothingApi.getAllClothes(
-                currentPage,
-                8,
-                categoryFilter,
-                brandFilter,
-                sortBy
-            );
-            setClothes(prevClothes => [...prevClothes, ...data.items]);
-            setHasMore(data.currentPage < data.totalPages);
-            setCurrentPage(prev => prev + 1);
-        } catch (error) {
-            console.error('Failed to fetch clothes:', error);
-            setServerDown(true);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // Reset when filters change
+    // Socket.IO setup with deduplication
     useEffect(() => {
-        setCurrentPage(1);
+        const socket = io("http://localhost:3001");
+        socket.on("connect", () => {
+            console.log("Connected to server via socket:", socket.id);
+            setServerDown(false);
+        });
+        socket.on("disconnect", () => {
+            console.log("Disconnected from server");
+            setServerDown(true);
+        });
+        socket.on("clothingAdded", (item) => {
+            setClothes(prev => {
+                if (!prev.some(c => c.id === item.id)) {
+                    return [...prev, item];
+                }
+                return prev;
+            });
+        });
+        socket.on("clothingUpdated", (item) => {
+            setClothes(prev => prev.map(c => c.id === item.id ? item : c));
+        });
+        socket.on("clothingDeleted", (id) => {
+            setClothes(prev => prev.filter(c => c.id !== id));
+        });
+        return () => socket.disconnect();
+    }, []);
+
+    // Fetch clothes with infinite scroll and deduplication
+    useEffect(() => {
+        const fetchClothes = async () => {
+            if (!hasMore || serverDown) return;
+            setIsLoading(true);
+            try {
+                const res = await axios.get('http://localhost:3001/api/clothes', {
+                    params: { page, limit: 8, category: categoryFilter, brand: brandFilter, sort: sortBy }
+                });
+                setClothes(prev => {
+                    const newItems = res.data.items.filter(item => !prev.some(c => c.id === item.id));
+                    return [...prev, ...newItems];
+                });
+                setHasMore(res.data.currentPage < res.data.totalPages);
+            } catch (err) {
+                console.error("Error fetching clothes:", err);
+                setServerDown(true);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchClothes();
+    }, [page, categoryFilter, brandFilter, sortBy, serverDown]);
+
+    // Reset clothes when filters/sort change
+    useEffect(() => {
         setClothes([]);
+        setPage(1);
         setHasMore(true);
     }, [categoryFilter, brandFilter, sortBy]);
-
-    // Load more when page changes
-    useEffect(() => {
-        if (hasMore && !isLoading) {
-            fetchClothes();
-        }
-    }, [currentPage, categoryFilter, brandFilter, sortBy]);
 
     const handleAdd = async (clothing) => {
         if (serverDown) return;
         try {
-            const newItem = await clothingApi.createClothing(clothing);
-            setClothes(prev => [...prev, newItem]);
-            updateCharts([...clothes, newItem]);
-        } catch (error) {
-            console.error("Error adding clothing:", error);
+            const res = await axios.post('http://localhost:3001/api/clothes', clothing);
+            setClothes(prev => {
+                if (!prev.some(c => c.id === res.data.id)) {
+                    return [...prev, res.data];
+                }
+                return prev;
+            });
+        } catch (err) {
+            console.error("Error adding clothing:", err);
             setServerDown(true);
         }
     };
@@ -113,12 +138,11 @@ function App() {
     const handleUpdate = async (updatedClothing) => {
         if (serverDown) return;
         try {
-            const updated = await clothingApi.updateClothing(updatedClothing.id, updatedClothing);
-            setClothes(prev => prev.map(c => c.id === updated.id ? updated : c));
+            await axios.put(`http://localhost:3001/api/clothes/${updatedClothing.id}`, updatedClothing);
+            setClothes(prev => prev.map(c => (c.id === updatedClothing.id ? updatedClothing : c)));
             setSelectedClothing(null);
-            updateCharts(clothes.map(c => c.id === updated.id ? updated : c));
-        } catch (error) {
-            console.error("Error updating clothing:", error);
+        } catch (err) {
+            console.error("Error updating clothing:", err);
             setServerDown(true);
         }
     };
@@ -126,19 +150,18 @@ function App() {
     const handleDelete = async (id) => {
         if (serverDown) return;
         try {
-            await clothingApi.deleteClothing(id);
+            await axios.delete(`http://localhost:3001/api/clothes/${id}`);
             setClothes(prev => prev.filter(c => c.id !== id));
-            updateCharts(clothes.filter(c => c.id !== id));
-        } catch (error) {
-            console.error("Error deleting clothing:", error);
+        } catch (err) {
+            console.error("Error deleting clothing:", err);
             setServerDown(true);
         }
     };
 
     const generateRandomClothing = () => {
         const categories = ["Men", "Women", "Unisex"];
-        const brands = ["Nike", "Levi's", "Adidas", "North Face", "New Era"];
-        const clothingTypes = ["Shirt", "Pants", "Jacket", "Shoes", "Hat"];
+        const brands = ["Nike", "Levi's", "Adidas", "North Face", "New Era", "Columbia", "Reebok", "Timberland"];
+        const clothingTypes = ["Shirt", "Pants", "Jacket", "Shoes", "Hat", "Socks", "Gloves", "Top", "Boots"];
         return {
             name: `${faker.word.adjective()} ${clothingTypes[Math.floor(Math.random() * clothingTypes.length)]}`,
             price: faker.number.int({ min: 10, max: 200 }),
@@ -157,58 +180,71 @@ function App() {
         }
     };
 
-    const lastClothingElementRef = useCallback(node => {
-        if (isLoading) return;
-        if (observer.current) observer.current.disconnect();
-        observer.current = new IntersectionObserver(entries => {
-            if (entries[0].isIntersecting && hasMore) {
-                fetchClothes();
-            }
-        });
-        if (node) observer.current.observe(node);
-    }, [isLoading, hasMore]);
+    const lastClothingElementRef = useCallback(
+        (node) => {
+            if (isLoading || serverDown) return;
+            if (observer.current) observer.current.disconnect();
+            observer.current = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && hasMore) {
+                    setPage(prev => prev + 1);
+                }
+            });
+            if (node) observer.current.observe(node);
+        },
+        [isLoading, hasMore, serverDown]
+    );
 
-    const updateCharts = (data) => {
-        const prices = data.map(c => c.price);
-        const categories = data.reduce((acc, c) => {
-            acc[c.category] = (acc[c.category] || 0) + 1;
-            return acc;
-        }, {});
-        const brands = data.reduce((acc, c) => {
-            acc[c.brand] = (acc[c.brand] || 0) + 1;
-            return acc;
-        }, {});
-
-        setChartData({
-            priceDistribution: {
-                labels: ['0-50', '51-100', '100+'],
-                datasets: [{
-                    label: 'Price Distribution',
-                    data: [
-                        prices.filter(p => p <= 50).length,
-                        prices.filter(p => p > 50 && p <= 100).length,
-                        prices.filter(p => p > 100).length
-                    ],
-                    backgroundColor: ['#000', '#555', '#999']
-                }]
-            },
-            categoryCount: {
-                labels: Object.keys(categories),
-                datasets: [{
-                    data: Object.values(categories),
-                    backgroundColor: ['#000', '#555', '#999', '#4BC0C0', '#9966FF']
-                }]
-            },
-            brandDistribution: {
-                labels: Object.keys(brands),
-                datasets: [{
-                    label: 'Items by Brand',
-                    data: Object.values(brands),
-                    backgroundColor: '#3c3a3a'
-                }]
+    useEffect(() => {
+        const updateCharts = async () => {
+            try {
+                setIsLoading(true);
+                await new Promise(resolve => setTimeout(resolve, 100));
+                const prices = clothes.map(c => c.price);
+                const categories = clothes.reduce((acc, c) => {
+                    acc[c.category] = (acc[c.category] || 0) + 1;
+                    return acc;
+                }, {});
+                const brands = clothes.reduce((acc, c) => {
+                    acc[c.brand] = (acc[c.brand] || 0) + 1;
+                    return acc;
+                }, {});
+                setChartData({
+                    priceDistribution: {
+                        labels: ['0-50', '51-100', '100+'],
+                        datasets: [{
+                            label: 'Price Distribution',
+                            data: [
+                                prices.filter(p => p <= 50).length,
+                                prices.filter(p => p > 50 && p <= 100).length,
+                                prices.filter(p => p > 100).length
+                            ],
+                            backgroundColor: ['#000', '#555', '#999']
+                        }]
+                    },
+                    categoryCount: {
+                        labels: Object.keys(categories),
+                        datasets: [{
+                            data: Object.values(categories),
+                            backgroundColor: ['#000', '#555', '#999', '#4BC0C0', '#9966FF']
+                        }]
+                    },
+                    brandDistribution: {
+                        labels: Object.keys(brands),
+                        datasets: [{
+                            label: 'Items by Brand',
+                            data: Object.values(brands),
+                            backgroundColor: '#3c3a3a'
+                        }]
+                    }
+                });
+            } catch (err) {
+                console.error("Error updating charts:", err);
+            } finally {
+                setIsLoading(false);
             }
-        });
-    };
+        };
+        updateCharts();
+    }, [clothes]);
 
     const stats = {
         maxPrice: clothes.length ? Math.max(...clothes.map(c => c.price)) : 0,
@@ -216,7 +252,6 @@ function App() {
         avgPrice: clothes.length ? clothes.reduce((sum, c) => sum + c.price, 0) / clothes.length : 0
     };
 
-    // Rest of the component remains the same
     return (
         <Router>
             <div>
@@ -257,20 +292,22 @@ function App() {
                             {isLoading && !serverDown && <div>Loading more items...</div>}
                             {!hasMore && clothes.length > 0 && !serverDown && <div>No more items to load.</div>}
                             <ClothingForm onAdd={handleAdd} onUpdate={handleUpdate} selectedClothing={selectedClothing} disabled={serverDown} />
-                            <div className="charts-container">
-                                <div className="chart">
-                                    <h3>Price Distribution</h3>
-                                    <Bar data={chartData.priceDistribution} options={{ responsive: true }} />
+                            {isLoading && !serverDown ? <div>Loading charts...</div> : (
+                                <div className="charts-container">
+                                    <div className="chart">
+                                        <h3>Price Distribution</h3>
+                                        <Bar data={chartData.priceDistribution} options={{ responsive: true }} />
+                                    </div>
+                                    <div className="chart">
+                                        <h3>Items by Category</h3>
+                                        <Pie data={chartData.categoryCount} options={{ responsive: true }} />
+                                    </div>
+                                    <div className="chart">
+                                        <h3>Brand Distribution</h3>
+                                        <Bar data={chartData.brandDistribution} options={{ responsive: true }} />
+                                    </div>
                                 </div>
-                                <div className="chart">
-                                    <h3>Items by Category</h3>
-                                    <Pie data={chartData.categoryCount} options={{ responsive: true }} />
-                                </div>
-                                <div className="chart">
-                                    <h3>Brand Distribution</h3>
-                                    <Bar data={chartData.brandDistribution} options={{ responsive: true }} />
-                                </div>
-                            </div>
+                            )}
                         </div>
                     } />
                     <Route path="/about" element={<AboutUs />} />

@@ -416,3 +416,21 @@ button.delete:hover {
   font-weight: bold;
   margin: 20px 0;
 }
+
+.price-label {
+  font-size: 0.8em;
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+.most-expensive {
+  color: #ff4444;
+}
+
+.least-expensive {
+  color: #44ff44;
+}
+
+.average-priced {
+  color: #4444ff;
+}
